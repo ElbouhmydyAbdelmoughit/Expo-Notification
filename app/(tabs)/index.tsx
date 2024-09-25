@@ -1,70 +1,141 @@
-import { Image, StyleSheet, Platform } from 'react-native';
+import { useState, useEffect, useRef } from "react";
+import { Text, View, Button, Platform, StyleSheet, Alert } from "react-native";
+import * as Device from "expo-device";
+import * as Notifications from "expo-notifications";
+import Constants from "expo-constants";
 
-import { HelloWave } from '@/components/HelloWave';
-import ParallaxScrollView from '@/components/ParallaxScrollView';
-import { ThemedText } from '@/components/ThemedText';
-import { ThemedView } from '@/components/ThemedView';
+// Notification handler configuration
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true, // Display the alert as a pop-up
+    shouldPlaySound: true, // Optional: Play sound with the notification
+    shouldSetBadge: true, // Optional: Set the app badge icon
+  }),
+});
 
 export default function HomeScreen() {
+  const [expoPushToken, setExpoPushToken] = useState<string>("");
+  const [notification, setNotification] = useState<any>(false);
+  const notificationListener = useRef<any>();
+  const responseListener = useRef<any>();
+
+  // Function to request push notification permissions and get the token
+  async function registerForPushNotificationsAsync() {
+    let token;
+    if (Device.isDevice) {
+      const { status: existingStatus } =
+        await Notifications.getPermissionsAsync();
+      let finalStatus = existingStatus;
+      if (existingStatus !== "granted") {
+        const { status } = await Notifications.requestPermissionsAsync();
+        finalStatus = status;
+      }
+      if (finalStatus !== "granted") {
+        Alert.alert(
+          "Permission Denied",
+          "Failed to get push token for push notification!"
+        );
+        return;
+      }
+      token = (await Notifications.getExpoPushTokenAsync()).data;
+      console.log(token);
+      setExpoPushToken(token);
+    } else {
+      Alert.alert(
+        "Device Error",
+        "Must use physical device for Push Notifications"
+      );
+    }
+
+    if (Platform.OS === "android") {
+      Notifications.setNotificationChannelAsync("default", {
+        name: "default",
+        importance: Notifications.AndroidImportance.MAX, // Ensures pop-up behavior
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: "#FF231F7C",
+      });
+    }
+
+    return token;
+  }
+
+  useEffect(() => {
+    registerForPushNotificationsAsync();
+
+    // Listener for incoming notifications
+    notificationListener.current =
+      Notifications.addNotificationReceivedListener((notification) => {
+        setNotification(notification);
+
+        // Optional: Pop-up alert to display notification details when received
+        Alert.alert(
+          notification.request.content.title!,
+          notification.request.content.body!
+        );
+      });
+
+    // Listener for notification interaction (response)
+    responseListener.current =
+      Notifications.addNotificationResponseReceivedListener((response) => {
+        console.log(response);
+      });
+
+    return () => {
+      Notifications.removeNotificationSubscription(
+        notificationListener.current
+      );
+      Notifications.removeNotificationSubscription(responseListener.current);
+    };
+  }, []);
+
+  // Function to trigger a local notification
+  const sendNotification = async () => {
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: "You've got mail! 📬",
+        body: "Here is the notification body",
+        data: { data: "goes here" },
+      },
+      trigger: { seconds: 2 }, // Notification will trigger in 2 seconds
+    });
+  };
+
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({ ios: 'cmd + d', android: 'cmd + m' })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-        <ThemedText>
-          Tap the Explore tab to learn more about what's included in this starter app.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          When you're ready, run{' '}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+    <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+      <Text>Your expo push token: {expoPushToken}</Text>
+      <View style={{ alignItems: "center", justifyContent: "center" }}>
+        <Text>Title: {notification?.request?.content?.title}</Text>
+        <Text>Body: {notification?.request?.content?.body}</Text>
+        <Text>Data: {notification?.request?.content?.data?.data}</Text>
+      </View>
+      <Button title="Press to send notification" onPress={sendNotification} />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  container: {
+    flex: 1,
+    padding: 20,
+    backgroundColor: "#fff",
+    alignItems: "center",
+    justifyContent: "center",
   },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
+  button: {
+    backgroundColor: "#4287f5",
+    padding: 10,
+    borderRadius: 5,
+    color: "#fff",
+    fontWeight: "bold",
+    marginTop: 10,
+    width: "90%",
+    textAlign: "center",
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
+  text: {
+    marginTop: 20,
+    marginBottom: 20,
+    fontSize: 16,
+    textAlign: "center",
+    color: "red",
   },
 });
